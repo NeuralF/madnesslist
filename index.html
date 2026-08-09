@@ -150,7 +150,32 @@ select:focus{border-color:var(--p)}
 .rec .bsel:hover,.rec .bsel:focus{color:var(--p-hi);border-color:var(--p-dim)}
 .rec .bsel option{background:var(--void);color:var(--p)}
 .rec .lvl{margin-left:auto;font-size:16px;font-weight:800;letter-spacing:0;line-height:1;flex:0 0 auto}
-.rec textarea{font-size:13.5px;line-height:1.55}
+.rec textarea{font-size:13.5px;line-height:1.55;max-height:260px;overflow-y:auto}
+#newText{max-height:38vh;overflow-y:auto}
+.rec .preview{
+  font-size:13.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+  color:var(--p-hi);text-shadow:0 0 7px rgba(92,242,176,.35);
+  max-height:200px;overflow:hidden;position:relative;cursor:pointer;
+}
+.rec .preview::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:70px;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(4,7,10,0),rgba(4,7,10,.55) 45%,rgba(4,7,10,.95));
+}
+.rec .more{
+  align-self:flex-start;margin-top:8px;background:none;border:1px solid var(--p-dim);
+  color:var(--p-mid);font:inherit;font-size:9px;letter-spacing:.16em;padding:5px 10px;cursor:pointer;
+}
+.rec .more:hover{color:var(--void);background:var(--p);border-color:var(--p);box-shadow:0 0 14px rgba(92,242,176,.3)}
+
+#recDlg{max-width:min(94vw,760px)}
+#recDlg .rhead{
+  display:flex;align-items:center;gap:10px;font-size:9px;letter-spacing:.16em;color:var(--p-mid);
+  border-bottom:1px dashed var(--p-dim);padding-bottom:9px;margin-bottom:13px;
+}
+#recDlg .rlvl{margin-left:auto;font-size:24px;font-weight:800;letter-spacing:0;line-height:1}
+#recDlg textarea{max-height:46vh;overflow-y:auto;font-size:14px;line-height:1.65}
+#recDlg .rimg{border:1px solid var(--p-dim);margin-bottom:13px;position:relative}
+#recDlg .rimg img{display:block;width:100%;max-height:230px;object-fit:cover;cursor:zoom-in;opacity:.92}
 .rec .thumb{position:relative;margin:0 0 9px;border:1px solid var(--p-dim)}
 .rec .thumb img{display:block;width:100%;max-height:190px;object-fit:cover;cursor:zoom-in;opacity:.9}
 .rec .thumb img:hover{opacity:1}
@@ -323,6 +348,24 @@ dialog code{color:var(--amber)}
 <dialog id="imgDlg">
   <img id="imgFull" alt="">
   <div class="cap"><span id="imgCap"></span><button class="btn sm" id="imgClose">ЗАКРЫТЬ</button></div>
+</dialog>
+
+<dialog id="recDlg">
+  <div class="rhead">
+    <span id="recId">REC-0000</span>
+    <select id="recBranch"></select>
+    <span id="recLvl" class="rlvl">00</span>
+  </div>
+  <div id="recImg" class="rimg"></div>
+  <textarea id="recText" rows="8"></textarea>
+  <div class="notches" id="recScale"></div>
+  <div class="dlg-row">
+    <button class="btn sm" id="recImgBtn">ИЗОБРАЖЕНИЕ</button>
+    <button class="btn sm danger" id="recDel">УДАЛИТЬ</button>
+    <span class="spacer"></span>
+    <span class="hint" id="recMeta"></span>
+    <button class="btn" id="recClose">ЗАКРЫТЬ</button>
+  </div>
 </dialog>
 
 <input type="file" id="imgIn" accept="image/*" hidden>
@@ -738,10 +781,14 @@ function renderBoard(){
       toast(recId(it.id) + " → " + branchName(sel.value));
     };
 
+    const op = document.createElement("button");
+    op.className = "clip"; op.textContent = "[▣]"; op.title = "Открыть запись";
+    op.onclick = () => openRec(it);
+
     const lv = document.createElement("span");
     lv.className = "lvl"; lv.textContent = pad(it.m, 2);
     lv.style.color = col; lv.style.textShadow = "0 0 10px " + col;
-    head.append(id, sel, lv);
+    head.append(id, sel, op, lv);
     r.appendChild(head);
 
     if(it.img){
@@ -760,16 +807,30 @@ function renderBoard(){
       r.appendChild(th);
     }
 
-    const ta = document.createElement("textarea");
-    ta.value = it.text; ta.rows = 1;
-    ta.addEventListener("input", () => {
-      grow(ta); it.text = ta.value; it.updated = Date.now(); save(); queuePush();
-    });
-    ta.addEventListener("paste", e => {
-      const f = fromClipboard(e);
-      if(f){ e.preventDefault(); fileToRecord(f, it); }
-    });
-    r.appendChild(ta);
+    let ta = null;
+    if(isLong(it.text)){
+      const pv = document.createElement("div");
+      pv.className = "preview";
+      pv.textContent = it.text;
+      pv.onclick = () => openRec(it);
+      const more = document.createElement("button");
+      more.className = "more";
+      more.textContent = "РАЗВЕРНУТЬ · " + it.text.length + " ЗН.";
+      more.onclick = () => openRec(it);
+      r.append(pv, more);
+    }else{
+      ta = document.createElement("textarea");
+      ta.value = it.text; ta.rows = 1;
+      ta.addEventListener("input", () => {
+        grow(ta); it.text = ta.value; it.updated = Date.now(); save(); queuePush();
+      });
+      ta.addEventListener("blur", () => { if(isLong(ta.value)) renderBoard(); });
+      ta.addEventListener("paste", e => {
+        const f = fromClipboard(e);
+        if(f){ e.preventDefault(); fileToRecord(f, it); }
+      });
+      r.appendChild(ta);
+    }
 
     const foot = document.createElement("div");
     foot.className = "foot";
@@ -800,10 +861,95 @@ function renderBoard(){
 
     r.appendChild(foot);
     board.appendChild(r);
-    grow(ta);
+    if(ta) grow(ta);
   });
 }
+
 function render(){ renderTabs(); renderReadout(); renderScale(); renderBoard(); }
+
+/* ---------- окно записи ---------- */
+const LONG_CHARS = 300, LONG_LINES = 6;
+function isLong(t){
+  return t.length > LONG_CHARS || (t.match(/\n/g) || []).length > LONG_LINES;
+}
+const recDlg = document.getElementById("recDlg");
+const recText = document.getElementById("recText");
+let recCur = null;
+
+function openRec(it){
+  recCur = it;
+  renderRec();
+  recDlg.showModal();
+  setTimeout(() => grow(recText), 20);
+}
+function renderRec(){
+  const it = recCur; if(!it) return;
+  const col = heat(it.m);
+  document.getElementById("recId").textContent = recId(it.id);
+  const lv = document.getElementById("recLvl");
+  lv.textContent = pad(it.m, 2); lv.style.color = col; lv.style.textShadow = "0 0 14px " + col;
+  document.getElementById("recMeta").textContent =
+    fmtDate(it.created) + " · " + it.text.length + " ЗН." + (it.img ? " · " + fmtSize(it.img.length) : "");
+
+  const sel = document.getElementById("recBranch");
+  sel.innerHTML = "";
+  [{ id:FLOW, name:"ПОТОК" }, ...branches().map(b => ({ id:b.id, name:b.name.toUpperCase() }))].forEach(o => {
+    const op = document.createElement("option");
+    op.value = o.id; op.textContent = o.name;
+    if(o.id === homeOf(it)) op.selected = true;
+    sel.appendChild(op);
+  });
+
+  const wrap = document.getElementById("recImg");
+  wrap.innerHTML = "";
+  wrap.style.display = it.img ? "block" : "none";
+  if(it.img){
+    const im = document.createElement("img");
+    im.src = it.img; im.alt = "";
+    im.onclick = () => openImage(it);
+    wrap.appendChild(im);
+  }
+
+  const ns = document.getElementById("recScale");
+  ns.innerHTML = "";
+  for(let n=0;n<=10;n++){
+    const b = document.createElement("button");
+    b.className = "notch"; b.textContent = n;
+    b.setAttribute("aria-pressed", n === it.m);
+    if(n === it.m){ b.style.background = heat(n); b.style.boxShadow = "0 0 14px " + heat(n); }
+    b.onclick = () => { it.m = n; it.updated = Date.now(); save(); queuePush(); renderRec(); };
+    ns.appendChild(b);
+  }
+  if(recText.value !== it.text) recText.value = it.text;
+}
+recText.addEventListener("input", () => {
+  if(!recCur) return;
+  grow(recText);
+  recCur.text = recText.value; recCur.updated = Date.now();
+  save(); queuePush();
+  document.getElementById("recMeta").textContent =
+    fmtDate(recCur.created) + " · " + recCur.text.length + " ЗН." + (recCur.img ? " · " + fmtSize(recCur.img.length) : "");
+});
+recText.addEventListener("paste", e => {
+  const f = fromClipboard(e);
+  if(f && recCur){ e.preventDefault(); fileToRecord(f, recCur).then(renderRec); }
+});
+document.getElementById("recBranch").onchange = e => {
+  if(!recCur) return;
+  recCur.b = e.target.value; recCur.updated = Date.now();
+  save(); queuePush();
+  toast(recId(recCur.id) + " → " + branchName(e.target.value));
+};
+document.getElementById("recImgBtn").onclick = () => { if(recCur) pickFor(recCur); };
+document.getElementById("recDel").onclick = () => {
+  if(!recCur) return;
+  recCur.del = true; recCur.img = ""; recCur.updated = Date.now();
+  save(); queuePush();
+  toast("ЗАПИСЬ " + recId(recCur.id) + " СТЁРТА");
+  recDlg.close();
+};
+document.getElementById("recClose").onclick = () => recDlg.close();
+recDlg.addEventListener("close", () => { recCur = null; render(); });
 
 /* ---------- ввод ---------- */
 const newText = document.getElementById("newText");
@@ -816,7 +962,7 @@ let pickTarget = null;
 function pickFor(it){ pickTarget = it || null; imgIn.click(); }
 imgIn.onchange = e => {
   const f = e.target.files[0];
-  if(f) fileToRecord(f, pickTarget);
+  if(f) fileToRecord(f, pickTarget).then(() => { if(recCur) renderRec(); });
   pickTarget = null;
   e.target.value = "";
 };
